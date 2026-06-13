@@ -23,7 +23,7 @@ def enviar_mensaje_telegram(mensaje):
 
 def calcular_estrategia():
     # Descargamos las últimas 60 velas de 1 minuto de Binance de forma nativa
-    url = f"https://api.binance.com/api/v3/klines?symbol={SIMBOLO}&interval=1m&limit=60"
+    url = f"https://api.binance.us/api/v3/klines?symbol={SIMBOLO}&interval=1m&limit=60"
     try:
         response = urllib.request.urlopen(url)
         velas = json.loads(response.read().decode())

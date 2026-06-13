@@ -9,19 +9,20 @@ from solana.rpc.api import Client
 from solders.keypair import Keypair
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 
-# --- ENGAÑO PARA RENDER GRATIS ---
+# --- ENGAÑO PARA RENDER GRATIS (ESTABLE) ---
 def levantar_puerto_falso():
     try:
         puerto = int(os.getenv("PORT", 10000))
         server = HTTPServer(('0.0.0.0', puerto), SimpleHTTPRequestHandler)
-        print(f"🌍 Puerto falso activo para mantener Render Free.")
+        print(f"🌍 Puerto falso activo en el puerto {puerto} para Render Free.")
         server.serve_forever()
     except Exception as e:
-        print(f"Aviso puerto: {e}")
+        print(f"Aviso puerto falso: {e}")
 
+# Arrancamos el servidor en un hilo paralelo de forma segura
 threading.Thread(target=levantar_puerto_falso, daemon=True).start()
 
-# --- CONFIGURACIÓN VARIABLES ---
+# --- CONFIGURACIÓN DE VARIABLES ---
 TOKEN_TELEGRAM = os.getenv("TELEGRAM_TOKEN")
 ID_TELEGRAM = os.getenv("TELEGRAM_CHAT_ID")
 PHANTOM_PRIVATE_KEY = os.getenv("PHANTOM_PRIVATE_KEY")
@@ -39,26 +40,34 @@ def inicializar_db():
     conn.close()
 
 def guardar_precio(precio):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO historico_precios VALUES (?, ?)", (int(time.time()), precio))
-    cursor.execute("DELETE FROM historico_precios WHERE rowid NOT IN (SELECT rowid FROM historico_precios ORDER BY timestamp DESC LIMIT 150)")
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO historico_precios VALUES (?, ?)", (int(time.time()), precio))
+        cursor.execute("DELETE FROM historico_precios WHERE rowid NOT IN (SELECT rowid FROM historico_precios ORDER BY timestamp DESC LIMIT 150)")
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error DB: {e}")
 
 def cargar_precios():
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT precio FROM historico_precios ORDER BY timestamp ASC")
-    filas = cursor.fetchall()
-    conn.close()
-    return [f[0] for f in filas]
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute("SELECT precio FROM historico_precios ORDER BY timestamp ASC")
+        filas = cursor.fetchall()
+        conn.close()
+        return [f[0] for f in filas]
+    except Exception as e:
+        print(f"Error DB cargar: {e}")
+        return []
 
 def enviar_mensaje(texto):
-    try:
-        bot.send_message(ID_TELEGRAM, texto)
-    except Exception as e:
-        print(f"Error Telegram: {e}")
+    if TOKEN_TELEGRAM and ID_TELEGRAM:
+        try:
+            bot.send_message(ID_TELEGRAM, texto)
+        except Exception as e:
+            print(f"Error enviando Telegram: {e}")
 
 def obtener_precio_jupiter():
     url = f"https://api.jup.ag/price/v2?ids={ETH_MINT}"
@@ -102,69 +111,76 @@ def ejecutar_orden_jupiter(tipo_orden, cantidad_usd):
         enviar_mensaje(f"⚡ [Scalper 24/7] `{tipo_orden}` por ${cantidad_usd} USDC ejecutada con éxito.")
         return True
     except Exception as e:
-        print(f"Error firma: {e}")
+        print(f"Error firma Web3: {e}")
         return False
 
 # --- MOTOR SCALPER DE ALTA ACTIVIDAD ---
 def algoritmo_maestro():
     inicializar_db()
-    enviar_mensaje("🚀 Bot Scalper de Alta Actividad Activado. Operando micro-oscilaciones del mercado...")
+    enviar_mensaje("🚀 Bot Scalper de Alta Actividad Listo. Analizando micro-oscilaciones del mercado...")
     
     posicion_abierta = False
     tipo_posicion = None
     precio_entrada = 0.0
     
     # Parámetros ajustados de micro-scalping
-    STOP_LOSS = 0.008  # 0.8%
+    STOP_LOSS = 0.008   # 0.8%
     TAKE_PROFIT = 0.015 # 1.5%
 
     while True:
-        precio_actual = obtener_precio_jupiter()
-        
-        if precio_actual:
-            guardar_precio(precio_actual)
-            precios_historicos = cargar_precios()
+        try:
+            precio_actual = obtener_precio_jupiter()
             
-            print(f"⚡ Monitoreando Scalper: ${precio_actual:.2f} | Datos: {len(precios_historicos)}/150")
+            if precio_actual:
+                guardar_precio(precio_actual)
+                precios_historicos = cargar_precios()
+                
+                print(f"⚡ Monitoreando Scalper: ${precio_actual:.2f} | Muestras: {len(precios_historicos)}/150")
+                
+                # GESTIÓN DE CIERRES RÁPIDOS
+                if posicion_abierta:
+                    rendimiento = (precio_actual - precio_entrada) / precio_entrada if tipo_posicion == "LONG" else (precio_entrada - precio_actual) / precio_entrada
+                    
+                    if rendimiento <= -STOP_LOSS:
+                        enviar_mensaje(f"🛑 [SCALPER - STOP LOSS]\nCierre rápido de protección.\n💵 Entrada: ${precio_entrada:.2f} | Cierre: ${precio_actual:.2f}\n📊 Resultado: {rendimiento*100:.2f}%")
+                        if ejecutar_orden_jupiter(f"CERRAR_{tipo_posicion}", 15):
+                            posicion_abierta = False
+                            tipo_posicion = None
+                            
+                    elif rendimiento >= TAKE_PROFIT:
+                        enviar_mensaje(f"🎯 [SCALPER - TAKE PROFIT]\n¡Micro-objetivo de ganancia alcanzado!\n💵 Entrada: ${precio_entrada:.2f} | Cierre: ${precio_actual:.2f}\n🟩 Beneficio: +{rendimiento*100:.2f}%")
+                        if ejecutar_orden_jupiter(f"CERRAR_{tipo_posicion}", 15):
+                            posicion_abierta = False
+                            tipo_posicion = None
+
+                # ENTRADAS DE ALTA FRECUENCIA
+                if len(precios_historicos) >= 14 and not posicion_abierta:
+                    _, b_superior, b_inferior = calcular_bandas_bollinger_rapidas(precios_historicos)
+                    rsi = calcular_rsi_rapido(precios_historicos)
+                    stoch = calcular_estocastico_rapido(precios_historicos)
+                    
+                    # Condiciones rápidas para detectar si está undervalued u overvalued
+                    esta_undervalued = precio_actual < b_inferior and rsi < 35 and stoch < 20
+                    esta_overvalued = precio_actual > b_superior and rsi > 65 and stoch > 80
+
+                    if esta_undervalued:
+                        enviar_mensaje(f"🟢 [SCALPER LONG - UNDERVALUED]\nMicro-oportunidad de rebote rápido en soporte.\n💵 Precio: ${precio_actual:.2f} | RSI: {rsi:.1f}")
+                        if ejecutar_orden_jupiter("ABRIR_LONG", 15):
+                            posicion_abierta = True
+                            tipo_posicion = "LONG"
+                            precio_entrada = precio_actual
+                            
+                    elif esta_overvalued:
+                        enviar_mensaje(f"🔴 [SCALPER SHORT - OVERVALUED]\nMicro-oportunidad de caída corta en resistencia.\n💵 Precio: ${precio_actual:.2f} | RSI: {rsi:.1f}")
+                        if ejecutar_orden_jupiter("ABRIR_SHORT", 15):
+                            posicion_abierta = True
+                            tipo_posicion = "SHORT"
+                            precio_entrada = precio_actual
+                            
+        except Exception as e:
+            print(f"Error en bucle principal: {e}")
             
-            # GESTIÓN DE CIERRES RÁPIDOS
-            if posicion_abierta:
-                rendimiento = (precio_actual - precio_entrada) / precio_entrada if tipo_posicion == "LONG" else (precio_entrada - precio_actual) / precio_entrada
-                
-                if rendimiento <= -STOP_LOSS:
-                    enviar_mensaje(f"🛑 [SCALPER - STOP LOSS]\nCierre rápido de protección.\n💵 Entrada: ${precio_entrada:.2f} | Cierre: ${precio_actual:.2f}\n📊 Resultado: {rendimiento*100:.2f}%")
-                    if ejecutar_orden_jupiter(f"CERRAR_{tipo_posicion}", 15):
-                        posicion_abierta = False
-                        tipo_posicion = None
-                        
-                elif rendimiento >= TAKE_PROFIT:
-                    enviar_mensaje(f"🎯 [SCALPER - TAKE PROFIT]\n¡Micro-objetivo alcanzado!\n💵 Entrada: ${precio_entrada:.2f} | Cierre: ${precio_actual:.2f}\n🟩 Beneficio: +{rendimiento*100:.2f}%")
-                    if ejecutar_orden_jupiter(f"CERRAR_{tipo_posicion}", 15):
-                        posicion_abierta = False
-                        tipo_posicion = None
+        time.sleep(30) # Escaneo constante cada 30 segundos
 
-            # ENTRADAS DE ALTA FRECUENCIA
-            if len(precios_historicos) >= 14 and not posicion_abierta:
-                _, b_superior, b_inferior = calcular_bandas_bollinger_rapidas(precios_historicos)
-                rsi = calcular_rsi_rapido(precios_historicos)
-                stoch = calcular_estocastico_rapido(precios_historicos)
-                
-                # Condiciones rápidas de clasificación de valor
-                esta_undervalued = precio_actual < b_inferior and rsi < 35 and stoch < 20
-                esta_overvalued = precio_actual > b_superior and rsi > 65 and stoch > 80
-
-                if esta_undervalued:
-                    enviar_mensaje(f"🟢 [SCALPER LONG - UNDERVALUED]\nMicro-oportunidad de rebote rápida detectada.\n💵 Precio: ${precio_actual:.2f} | RSI: {rsi:.1f}")
-                    if ejecutar_orden_jupiter("ABRIR_LONG", 15):
-                        posicion_abierta = True
-                        tipo_posicion = "LONG"
-                        precio_entrada = precio_actual
-                        
-                elif esta_overvalued:
-                    enviar_mensaje(f"🔴 [SCALPER SHORT - OVERVALUED]\nMicro-oportunidad de caída corta detectada.\n💵 Precio: ${precio_actual:.2f} | RSI: {rsi:.1f}")
-                    if ejecutar_orden_jupiter("ABRIR_SHORT", 15):
-                        posicion_abierta = True
-                        tipo_posicion = "SHORT"
-                        precio_entrada = precio_actual
-                        
-        time.sleep(30) # Escanea el mercado el doble de rápido (cada
+if __name__ == "__main__":
+    algoritmo_maestro()

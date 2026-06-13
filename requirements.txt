@@ -1,0 +1,5 @@
+requests
+pyTelegramBotAPI
+numpy
+solana
+solders

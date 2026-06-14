@@ -16,7 +16,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "¡Bot de trading activo!"
+    return "¡Bot de trading activo y analizando mercados!"
 
 def run_flask():
     app.run(host='0.0.0.0', port=PORT)
@@ -50,17 +50,21 @@ def calcular_bollinger(precios_list, periodo=20, multiplicador=2):
     return sup, inf
 
 def obtener_precio():
-    # Usamos GeckoTerminal (CoinGecko) que es ultra estable para redes de Solana
-    url = "https://api.geckoterminal.com/api/v2/networks/solana/tokens/7vfCg797rqwKCmwQNpepX8zmYbhG3wD6f1cMZaAht9wj"
+    # Usamos el endpoint específico de PAIRS de Dexscreener, ideal para direcciones de Pools
+    url = "https://api.dexscreener.com/latest/dex/pairs/solana/7vfCg797rqwKCmwQNpepX8zmYbhG3wD6f1cMZaAht9wj"
     try:
-        r = requests.get(url, timeout=10)
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        r = requests.get(url, headers=headers, timeout=10)
         if r.status_code == 200:
             datos = r.json()
-            precio = datos.get('data', {}).get('attributes', {}).get('price_usd')
-            if precio:
-                return float(precio)
+            # Validamos la estructura del Pool de forma segura
+            pairs = datos.get('pairs', [])
+            if pairs and len(pairs) > 0:
+                precio = pairs[0].get('priceUsd')
+                if precio:
+                    return float(precio)
     except Exception as e:
-        print(f"Error consultando precio en GeckoTerminal: {e}")
+        print(f"Error en consulta de Pool: {e}")
     return None
 
 # --- 3. BUCLE PRINCIPAL DEL ALGORITMO ---
@@ -69,7 +73,7 @@ def algoritmo_scalping():
     while True:
         p = obtener_precio()
         if p is None:
-            print("⏳ Saltando ciclo por falta de datos de precio...")
+            print("⏳ Saltando ciclo por falta de datos de precio (Verifica el contrato)...")
             time.sleep(30)
             continue
             
@@ -85,7 +89,7 @@ def algoritmo_scalping():
         if p < inf and rsi < 30:
             bot.send_message(ID_TELEGRAM, f"🟢 *UNDERVALUED*\nPrecio: ${p:.6f}\nRSI: {rsi:.1f}\nEstatus: *Compra*", parse_mode="Markdown")
         elif p > sup and rsi > 70:
-            bot.send_message(ID_TELEGRAM, f"🔴 *OVERVALUED*\nPrecio: ${p:.4f}\nRSI: {rsi:.1f}\nEstatus: *Venta*", parse_mode="Markdown")
+            bot.send_message(ID_TELEGRAM, f"🔴 *OVERVALUED*\nPrecio: ${p:.6f}\nRSI: {rsi:.1f}\nEstatus: *Venta*", parse_mode="Markdown")
             
         time.sleep(30)
 

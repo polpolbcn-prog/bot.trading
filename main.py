@@ -11,15 +11,12 @@ TOKEN_TELEGRAM = os.environ.get("TELEGRAM_TOKEN")
 ID_TELEGRAM = os.environ.get("TELEGRAM_CHAT_ID")
 PORT = int(os.environ.get("PORT", 10000))
 
-# Inicializamos el bot de Telegram con el token seguro
 bot = telebot.TeleBot(TOKEN_TELEGRAM)
-
-# Inicializamos la app web auxiliar para Render
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "¡Bot de trading activo y funcionando de forma segura!"
+    return "¡Bot de trading activo!"
 
 def run_flask():
     app.run(host='0.0.0.0', port=PORT)
@@ -48,35 +45,22 @@ def calcular_bollinger(precios_list, periodo=20, multiplicador=2):
         return np.mean(precios_list), np.mean(precios_list)
     media = np.mean(precios_list[-periodo:])
     desviacion = np.std(precios_list[-periodo:])
-    sup = media + (multiplicador * desviación)
-    inf = media - (multiplicador * desviación)
+    sup = media + (multiplicador * desviacion)
+    inf = media - (multiplicador * desviacion)
     return sup, inf
 
 def obtener_precio():
-    # Intento 1: API Oficial de Precios de Jupiter (Directa para Solana)
-    url_jup = "https://api.jup.ag/price/v2?ids=7vfCg797rqwKCmwQNpepX8zmYbhG3wD6f1cMZaAht9wj"
+    # Usamos GeckoTerminal (CoinGecko) que es ultra estable para redes de Solana
+    url = "https://api.geckoterminal.com/api/v2/networks/solana/tokens/7vfCg797rqwKCmwQNpepX8zmYbhG3wD6f1cMZaAht9wj"
     try:
-        r = requests.get(url_jup, timeout=10)
+        r = requests.get(url, timeout=10)
         if r.status_code == 200:
             datos = r.json()
-            precio = datos.get('data', {}).get('7vfCg797rqwKCmwQNpepX8zmYbhG3wD6f1cMZaAht9wj', {}).get('price')
+            precio = datos.get('data', {}).get('attributes', {}).get('price_usd')
             if precio:
                 return float(precio)
-    except Exception:
-        pass  # Si falla Jupiter, salta automáticamente al respaldo
-
-    # Intento 2: Respaldo con API de Dexscreener corregida y segura
-    url_dex = "https://api.dexscreener.com/latest/dex/pairs/solana/7vfCg797rqwKCmwQNpepX8zmYbhG3wD6f1cMZaAht9wj"
-    try:
-        r = requests.get(url_dex, timeout=10)
-        if r.status_code == 200:
-            res_json = r.json()
-            pair = res_json.get('pair')
-            if pair and 'priceUsd' in pair:
-                return float(pair['priceUsd'])
     except Exception as e:
-        print(f"Error crítico en ambos proveedores de precios: {e}")
-        
+        print(f"Error consultando precio en GeckoTerminal: {e}")
     return None
 
 # --- 3. BUCLE PRINCIPAL DEL ALGORITMO ---
@@ -90,7 +74,7 @@ def algoritmo_scalping():
             continue
             
         precios.append(p)
-        print(f"📊 Precio obtenido con éxito: ${p:.4f} | Historial: {len(precios)} datos.")
+        print(f"📊 Precio obtenido con éxito: ${p:.6f} | Historial: {len(precios)} datos.")
         
         if len(precios) > 50:
             precios.pop(0)
@@ -98,9 +82,8 @@ def algoritmo_scalping():
         rsi = calcular_rsi(precios)
         sup, inf = calcular_bollinger(precios)
         
-        # Validación de alertas en Telegram usando variables unificadas
         if p < inf and rsi < 30:
-            bot.send_message(ID_TELEGRAM, f"🟢 *UNDERVALUED*\nPrecio: ${p:.4f}\nRSI: {rsi:.1f}\nEstatus: *Compra*", parse_mode="Markdown")
+            bot.send_message(ID_TELEGRAM, f"🟢 *UNDERVALUED*\nPrecio: ${p:.6f}\nRSI: {rsi:.1f}\nEstatus: *Compra*", parse_mode="Markdown")
         elif p > sup and rsi > 70:
             bot.send_message(ID_TELEGRAM, f"🔴 *OVERVALUED*\nPrecio: ${p:.4f}\nRSI: {rsi:.1f}\nEstatus: *Venta*", parse_mode="Markdown")
             
@@ -111,17 +94,14 @@ if __name__ == "__main__":
     print("🌍 Puerto falso activo en el puerto 10000 para Render Free.")
     print("🏁 Iniciando hilos del sistema...")
 
-    # Limpiamos webhooks viejos para evitar conflictos en Telegram
     try:
         bot.remove_webhook()
     except Exception as e:
         print(f"Aviso de Webhook: {e}")
 
-    # Hilo 1: Servidor Web Flask (Evita que Render tire el servicio)
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
-    # Hilo 2: Escucha del Bot de Telegram (Infinity Polling)
     print("🤖 Intentando activar escucha de comandos de Telegram (infinity_polling)...")
     telegram_thread = threading.Thread(
         target=lambda: bot.infinity_polling(none_stop=True, interval=1, timeout=20), 
@@ -129,5 +109,4 @@ if __name__ == "__main__":
     )
     telegram_thread.start()
 
-    # Hilo Principal: Motor de Trading
     algoritmo_scalping()

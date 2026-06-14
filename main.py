@@ -32,6 +32,34 @@ SOLANA_CLIENT = Client("https://api.mainnet-beta.solana.com")
 ETH_MINT = "7vfCg797rqwKCmwQNpepX8zmYbhG3wD6f1cMZaAht9wj"
 DB_NAME = "bot_fast_data.db"
 
+# --- COMANDOS DE TELEGRAM INTERACTIVOS ---
+@bot.message_handler(commands=['start', 'help'])
+def comando_bienvenida(message):
+    # Verificación de seguridad básica para que solo te responda a ti
+    if str(message.chat.id) == str(ID_TELEGRAM):
+        bot.reply_to(message, "🚀 *¡Bot Scalper Online!*\nEl algoritmo está activo en segundo plano analizando el mercado cada 30s.\n\nUsa `/balance` para comprobar el estado.", parse_mode="Markdown")
+
+@bot.message_handler(commands=['balance'])
+def comando_balance(message):
+    if str(message.chat.id) == str(ID_TELEGRAM):
+        precio = obtener_precio_jupiter()
+        msg = f"💰 *Estado de tu Bot:*\n"
+        msg += f"💵 Precio actual del Token: ${precio:.2f}\n"
+        if PHANTOM_PRIVATE_KEY:
+            try:
+                billetera = Keypair.from_base58_string(PHANTOM_PRIVATE_KEY)
+                msg += f"🔑 Wallet vinculada con éxito: `{billetera.pubkey()[:6]}...{billetera.pubkey()[-4:]}`\n"
+                msg += f"🎯 Fondos asignados por operación: $15 USDC"
+            except:
+                msg += "❌ Error: La clave privada guardada en Render es incorrecta."
+        else:
+            msg += "❌ Error: No se ha detectado ninguna clave privada."
+        bot.reply_to(message, msg, parse_mode="Markdown")
+
+def iniciar_escucha_telegram():
+    print("🤖 Escucha de comandos de Telegram activada.")
+    bot.infinity_polling()
+
 def inicializar_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -65,7 +93,7 @@ def cargar_precios():
 def enviar_mensaje(texto):
     if TOKEN_TELEGRAM and ID_TELEGRAM:
         try:
-            bot.send_message(ID_TELEGRAM, texto)
+            bot.send_message(ID_TELEGRAM, texto, parse_mode="Markdown")
         except Exception as e:
             print(f"Error enviando Telegram: {e}")
 
@@ -108,7 +136,7 @@ def ejecutar_orden_jupiter(tipo_orden, cantidad_usd):
     if not PHANTOM_PRIVATE_KEY: return False
     try:
         billetera = Keypair.from_base58_string(PHANTOM_PRIVATE_KEY)
-        enviar_mensaje(f"⚡ [Scalper 24/7] `{tipo_orden}` por ${cantidad_usd} USDC ejecutada con éxito.")
+        enviar_mensaje(f"⚡ *[Scalper 24/7]* `{tipo_orden}` por ${cantidad_usd} USDC ejecutada con éxito.")
         return True
     except Exception as e:
         print(f"Error firma Web3: {e}")
@@ -117,13 +145,15 @@ def ejecutar_orden_jupiter(tipo_orden, cantidad_usd):
 # --- MOTOR SCALPER DE ALTA ACTIVIDAD ---
 def algoritmo_maestro():
     inicializar_db()
-    enviar_mensaje("🚀 Bot Scalper de Alta Actividad Listo. Analizando micro-oscilaciones del mercado...")
+    
+    # Pequeño delay para dejar que Telegram conecte primero
+    time.sleep(2) 
+    enviar_mensaje("🚀 *Bot Scalper de Alta Actividad Listo.* Analizando micro-oscilaciones del mercado...")
     
     posicion_abierta = False
     tipo_posicion = None
     precio_entrada = 0.0
     
-    # Parámetros ajustados de micro-scalping
     STOP_LOSS = 0.008   # 0.8%
     TAKE_PROFIT = 0.015 # 1.5%
 
@@ -142,13 +172,13 @@ def algoritmo_maestro():
                     rendimiento = (precio_actual - precio_entrada) / precio_entrada if tipo_posicion == "LONG" else (precio_entrada - precio_actual) / precio_entrada
                     
                     if rendimiento <= -STOP_LOSS:
-                        enviar_mensaje(f"🛑 [SCALPER - STOP LOSS]\nCierre rápido de protección.\n💵 Entrada: ${precio_entrada:.2f} | Cierre: ${precio_actual:.2f}\n📊 Resultado: {rendimiento*100:.2f}%")
+                        enviar_mensaje(f"🛑 *[SCALPER - STOP LOSS]*\nCierre rápido de protección.\n💵 Entrada: ${precio_entrada:.2f} | Cierre: ${precio_actual:.2f}\n📊 Resultado: {rendimiento*100:.2f}%")
                         if ejecutar_orden_jupiter(f"CERRAR_{tipo_posicion}", 15):
                             posicion_abierta = False
                             tipo_posicion = None
                             
                     elif rendimiento >= TAKE_PROFIT:
-                        enviar_mensaje(f"🎯 [SCALPER - TAKE PROFIT]\n¡Micro-objetivo de ganancia alcanzado!\n💵 Entrada: ${precio_entrada:.2f} | Cierre: ${precio_actual:.2f}\n🟩 Beneficio: +{rendimiento*100:.2f}%")
+                        enviar_mensaje(f"🎯 *[SCALPER - TAKE PROFIT]*\n¡Micro-objetivo de ganancia alcanzado!\n💵 Entrada: ${precio_entrada:.2f} | Cierre: ${precio_actual:.2f}\n🟩 Beneficio: +{rendimiento*100:.2f}%")
                         if ejecutar_orden_jupiter(f"CERRAR_{tipo_posicion}", 15):
                             posicion_abierta = False
                             tipo_posicion = None
@@ -159,19 +189,19 @@ def algoritmo_maestro():
                     rsi = calcular_rsi_rapido(precios_historicos)
                     stoch = calcular_estocastico_rapido(precios_historicos)
                     
-                    # Condiciones rápidas para detectar si está undervalued u overvalued
+                    # Condiciones rápidas para detectar infravaloración o sobrevaloración
                     esta_undervalued = precio_actual < b_inferior and rsi < 35 and stoch < 20
                     esta_overvalued = precio_actual > b_superior and rsi > 65 and stoch > 80
 
                     if esta_undervalued:
-                        enviar_mensaje(f"🟢 [SCALPER LONG - UNDERVALUED]\nMicro-oportunidad de rebote rápido en soporte.\n💵 Precio: ${precio_actual:.2f} | RSI: {rsi:.1f}")
+                        enviar_mensaje(f"🟢 *[SCALPER LONG - UNDERVALUED]*\nMicro-oportunidad de rebote rápido en soporte.\n💵 Precio: ${precio_actual:.2f} | RSI: {rsi:.1f}")
                         if ejecutar_orden_jupiter("ABRIR_LONG", 15):
                             posicion_abierta = True
                             tipo_posicion = "LONG"
                             precio_entrada = precio_actual
                             
                     elif esta_overvalued:
-                        enviar_mensaje(f"🔴 [SCALPER SHORT - OVERVALUED]\nMicro-oportunidad de caída corta en resistencia.\n💵 Precio: ${precio_actual:.2f} | RSI: {rsi:.1f}")
+                        enviar_mensaje(f"🔴 *[SCALPER SHORT - OVERVALUED]*\nMicro-oportunidad de caída corta en resistencia.\n💵 Precio: ${precio_actual:.2f} | RSI: {rsi:.1f}")
                         if ejecutar_orden_jupiter("ABRIR_SHORT", 15):
                             posicion_abierta = True
                             tipo_posicion = "SHORT"
@@ -183,4 +213,8 @@ def algoritmo_maestro():
         time.sleep(30) # Escaneo constante cada 30 segundos
 
 if __name__ == "__main__":
+    # Lanzamos la escucha de comandos de Telegram en un hilo paralelo para que no bloquee el trading
+    threading.Thread(target=iniciar_escucha_telegram, daemon=True).start()
+    
+    # Arrancamos el algoritmo principal
     algoritmo_maestro()

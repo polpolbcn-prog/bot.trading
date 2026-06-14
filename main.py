@@ -68,10 +68,13 @@ def algoritmo_scalping():
                 bot.send_message(ID_TELEGRAM, f"🔴 *OVERVALUED*\nPrecio: ${p:.4f}\nRSI: {rsi:.1f}\nEstatus: *Caro*", parse_mode="Markdown")
         
         time.sleep(30)
-
-# --- INICIO ---
+# --- INICIO (CONFIGURACIÓN FINAL) ---
 if __name__ == "__main__":
-    # Arrancar Telegram en paralelo
-    threading.Thread(target=lambda: bot.infinity_polling(), daemon=True).start()
-    # Arrancar el motor de trading
+    # Limpiamos cualquier webhook anterior
+    bot.remove_webhook()
+    
+    # Arrancamos el bot de Telegram
+    threading.Thread(target=lambda: bot.infinity_polling(none_stop=True, interval=1), daemon=True).start()
+    
+    # Arrancamos el motor de trading
     algoritmo_scalping()

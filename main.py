@@ -1,15 +1,22 @@
-import os, time, sqlite3, requests, threading
+import os, time, threading, requests
 import numpy as np
 from telebot import TeleBot
+from flask import Flask # Nueva librería para engañar a Render
 
 # --- CONFIGURACIÓN ---
 TOKEN_TELEGRAM = os.getenv("TELEGRAM_TOKEN")
 ID_TELEGRAM = os.getenv("TELEGRAM_CHAT_ID")
+PORT = int(os.environ.get("PORT", 10000))
 ETH_MINT = "7vfCg797rqwKCmwQNpepX8zmYbhG3wD6f1cMZaAht9wj"
 
 bot = TeleBot(TOKEN_TELEGRAM)
+app = Flask(__name__)
 
-# --- ESTRATEGIA: INDICADORES TÉCNICOS ---
+@app.route('/')
+def home():
+    return "Bot activo y operando"
+
+# --- INDICADORES ---
 def calcular_rsi(precios, periodo=14):
     if len(precios) < periodo + 1: return 50
     diff = np.diff(precios)
@@ -24,31 +31,16 @@ def calcular_bollinger(precios, periodo=20):
     desv = np.std(precios[-periodo:])
     return media + (2.0 * desv), media - (2.0 * desv)
 
-# --- CONEXIÓN RESILIENTE A PRECIOS ---
 def obtener_precio():
-    # Intenta primero con Júpiter, si falla, usa DexScreener
-    urls = [
-        f"https://price.jup.ag/v2/price?ids={ETH_MINT}",
-        "https://api.dexscreener.com/latest/dex/tokens/" + ETH_MINT
-    ]
+    urls = [f"https://price.jup.ag/v2/price?ids={ETH_MINT}", "https://api.dexscreener.com/latest/dex/tokens/" + ETH_MINT]
     for url in urls:
         try:
             r = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
             if r.status_code == 200:
                 data = r.json()
-                if "jup.ag" in url:
-                    return float(data["data"][ETH_MINT]["price"])
-                else:
-                    return float(data["pairs"][0]["priceUsd"])
+                return float(data["data"][ETH_MINT]["price"]) if "jup.ag" in url else float(data["pairs"][0]["priceUsd"])
         except: continue
     return None
-
-# --- COMANDOS Y BOT ---
-@bot.message_handler(commands=['balance'])
-def comando_balance(message):
-    precio = obtener_precio()
-    msg = f"💰 *Precio actual:* ${precio:.4f}" if precio else "⚠️ *Error:* No se pudo obtener el precio."
-    bot.reply_to(message, msg, parse_mode="Markdown")
 
 def algoritmo_scalping():
     precios = []
@@ -57,24 +49,20 @@ def algoritmo_scalping():
         if p:
             precios.append(p)
             if len(precios) > 50: precios.pop(0)
-            
             rsi = calcular_rsi(precios)
             sup, inf = calcular_bollinger(precios)
-            
-            # LÓGICA DE VALORACIÓN
             if p < inf and rsi < 30:
-                bot.send_message(ID_TELEGRAM, f"🟢 *UNDERVALUED*\nPrecio: ${p:.4f}\nRSI: {rsi:.1f}\nEstatus: *Barato*", parse_mode="Markdown")
+                bot.send_message(ID_TELEGRAM, f"🟢 *UNDERVALUED* (Barato)\nPrecio: ${p:.4f}\nRSI: {rsi:.1f}")
             elif p > sup and rsi > 70:
-                bot.send_message(ID_TELEGRAM, f"🔴 *OVERVALUED*\nPrecio: ${p:.4f}\nRSI: {rsi:.1f}\nEstatus: *Caro*", parse_mode="Markdown")
-        
+                bot.send_message(ID_TELEGRAM, f"🔴 *OVERVALUED* (Caro)\nPrecio: ${p:.4f}\nRSI: {rsi:.1f}")
         time.sleep(30)
-# --- INICIO (CONFIGURACIÓN FINAL) ---
+
+# --- INICIO ---
 if __name__ == "__main__":
-    # Limpiamos cualquier webhook anterior
     bot.remove_webhook()
-    
-    # Arrancamos el bot de Telegram
-    threading.Thread(target=lambda: bot.infinity_polling(none_stop=True, interval=1), daemon=True).start()
-    
-    # Arrancamos el motor de trading
+    # Arrancar el servidor web falso (engaña a Render)
+    threading.Thread(target=lambda: app.run(host="0.0.0.0", port=PORT), daemon=True).start()
+    # Arrancar Telegram
+    threading.Thread(target=lambda: bot.infinity_polling(none_stop=True), daemon=True).start()
+    # Arrancar trading
     algoritmo_scalping()

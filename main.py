@@ -47,7 +47,11 @@ def comando_balance(message):
     if str(message.chat.id) == str(ID_TELEGRAM):
         precio = obtener_precio_jupiter()
         msg = f"💰 *Estado de tu Bot:*\n"
-        msg += f"💵 Precio actual del Token: ${precio:.2f}\n"
+        if precio:
+            msg += f"💵 Precio actual del Token: ${precio:.4f}\n"
+        else:
+            msg += f"💵 Precio actual del Token: ⚠️ Error de conexión con Júpiter\n"
+            
         if PHANTOM_PRIVATE_KEY:
             try:
                 billetera = Keypair.from_base58_string(PHANTOM_PRIVATE_KEY)
@@ -104,10 +108,16 @@ def enviar_mensaje(texto):
             print(f"Error enviando Telegram automático: {e}", flush=True)
 
 def obtener_precio_jupiter():
-    url = f"https://api.jup.ag/price/v2?ids={ETH_MINT}"
+    # Usamos la API v1 que es mucho más estable y ligera para servidores en la nube
+    url = f"https://price.jup.ag/v1/price?id={ETH_MINT}"
     try:
-        respuesta = requests.get(url, timeout=10).json()
-        return float(respuesta["data"][ETH_MINT]["price"])
+        respuesta = requests.get(url, timeout=10)
+        if respuesta.status_code == 200:
+            datos = respuesta.json()
+            return float(datos["data"]["price"])
+        else:
+            print(f"⚠️ Jupiter respondió con estado {respuesta.status_code}", flush=True)
+            return None
     except Exception as e:
         print(f"Error precio Jupiter: {e}", flush=True)
         return None
@@ -170,20 +180,20 @@ def algoritmo_maestro():
                 guardar_precio(precio_actual)
                 precios_historicos = cargar_precios()
                 
-                print(f"⚡ Monitoreando Scalper: ${precio_actual:.2f} | Muestras: {len(precios_historicos)}/150", flush=True)
+                print(f"⚡ Monitoreando Scalper: ${precio_actual:.4f} | Muestras: {len(precios_historicos)}/150", flush=True)
                 
                 # GESTIÓN DE CIERRES RÁPIDOS
                 if posicion_abierta:
                     rendimiento = (precio_actual - precio_entrada) / precio_entrada if tipo_posicion == "LONG" else (precio_entrada - precio_actual) / precio_entrada
                     
                     if rendimiento <= -STOP_LOSS:
-                        enviar_mensaje(f"🛑 *[SCALPER - STOP LOSS]*\nCierre rápido de protección.\n💵 Entrada: ${precio_entrada:.2f} | Cierre: ${precio_actual:.2f}\n📊 Resultado: {rendimiento*100:.2f}%")
+                        enviar_mensaje(f"🛑 *[SCALPER - STOP LOSS]*\nCierre rápido de protección.\n💵 Entrada: ${precio_entrada:.4f} | Cierre: ${precio_actual:.4f}\n📊 Resultado: {rendimiento*100:.2f}%")
                         if ejecutar_orden_jupiter(f"CERRAR_{tipo_posicion}", 15):
                             posicion_abierta = False
                             tipo_posicion = None
                             
                     elif rendimiento >= TAKE_PROFIT:
-                        enviar_mensaje(f"🎯 *[SCALPER - TAKE PROFIT]*\n¡Micro-objetivo de ganancia alcanzado!\n💵 Entrada: ${precio_entrada:.2f} | Cierre: ${precio_actual:.2f}\n🟩 Beneficio: +{rendimiento*100:.2f}%")
+                        enviar_mensaje(f"🎯 *[SCALPER - TAKE PROFIT]*\n¡Micro-objetivo de ganancia alcanzado!\n💵 Entrada: ${precio_entrada:.4f} | Cierre: ${precio_actual:.4f}\n🟩 Beneficio: +{rendimiento*100:.2f}%")
                         if ejecutar_orden_jupiter(f"CERRAR_{tipo_posicion}", 15):
                             posicion_abierta = False
                             tipo_posicion = None
@@ -199,18 +209,20 @@ def algoritmo_maestro():
                     esta_overvalued = precio_actual > b_superior and rsi > 65 and stoch > 80
 
                     if esta_undervalued:
-                        enviar_mensaje(f"🟢 *[SCALPER LONG - UNDERVALUED]*\nMicro-oportunidad de rebote rápido en soporte.\n💵 Precio: ${precio_actual:.2f} | RSI: {rsi:.1f}")
+                        enviar_mensaje(f"🟢 *[SCALPER LONG - UNDERVALUED]*\nMicro-oportunidad de rebote rápido en soporte.\n💵 Precio: ${precio_actual:.4f} | RSI: {rsi:.1f}")
                         if ejecutar_orden_jupiter("ABRIR_LONG", 15):
                             posicion_abierta = True
                             tipo_posicion = "LONG"
                             precio_entrada = precio_actual
                             
                     elif esta_overvalued:
-                        enviar_mensaje(f"🔴 *[SCALPER SHORT - OVERVALUED]*\nMicro-oportunidad de caída corta en resistencia.\n💵 Precio: ${precio_actual:.2f} | RSI: {rsi:.1f}")
+                        enviar_mensaje(f"🔴 *[SCALPER SHORT - OVERVALUED]*\nMicro-oportunidad de caída corta en resistencia.\n💵 Precio: ${precio_actual:.4f} | RSI: {rsi:.1f}")
                         if ejecutar_orden_jupiter("ABRIR_SHORT", 15):
                             posicion_abierta = True
                             tipo_posicion = "SHORT"
                             precio_entrada = precio_actual
+            else:
+                print("⏳ Saltando ciclo por falta de datos de precio...", flush=True)
                             
         except Exception as e:
             print(f"Error en bucle principal: {e}", flush=True)

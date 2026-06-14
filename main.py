@@ -14,10 +14,10 @@ def levantar_puerto_falso():
     try:
         puerto = int(os.getenv("PORT", 10000))
         server = HTTPServer(('0.0.0.0', puerto), SimpleHTTPRequestHandler)
-        print(f"🌍 Puerto falso activo en el puerto {puerto} para Render Free.")
+        print(f"🌍 Puerto falso activo en el puerto {puerto} para Render Free.", flush=True)
         server.serve_forever()
     except Exception as e:
-        print(f"Aviso puerto falso: {e}")
+        print(f"Aviso puerto falso: {e}", flush=True)
 
 # Arrancamos el servidor en un hilo paralelo de forma segura
 threading.Thread(target=levantar_puerto_falso, daemon=True).start()
@@ -35,12 +35,15 @@ DB_NAME = "bot_fast_data.db"
 # --- COMANDOS DE TELEGRAM INTERACTIVOS ---
 @bot.message_handler(commands=['start', 'help'])
 def comando_bienvenida(message):
-    # Verificación de seguridad básica para que solo te responda a ti
+    print(f"📥 Comando recibido: {message.text} de Chat ID: {message.chat.id}", flush=True)
     if str(message.chat.id) == str(ID_TELEGRAM):
         bot.reply_to(message, "🚀 *¡Bot Scalper Online!*\nEl algoritmo está activo en segundo plano analizando el mercado cada 30s.\n\nUsa `/balance` para comprobar el estado.", parse_mode="Markdown")
+    else:
+        print(f"⚠️ Alerta: Alguien con ID {message.chat.id} intentó usar el bot, pero el ID autorizado es {ID_TELEGRAM}", flush=True)
 
 @bot.message_handler(commands=['balance'])
 def comando_balance(message):
+    print(f"📥 Comando recibido: /balance", flush=True)
     if str(message.chat.id) == str(ID_TELEGRAM):
         precio = obtener_precio_jupiter()
         msg = f"💰 *Estado de tu Bot:*\n"
@@ -57,8 +60,11 @@ def comando_balance(message):
         bot.reply_to(message, msg, parse_mode="Markdown")
 
 def iniciar_escucha_telegram():
-    print("🤖 Escucha de comandos de Telegram activada.")
-    bot.infinity_polling()
+    print("🤖 Intentando activar escucha de comandos de Telegram (infinity_polling)...", flush=True)
+    try:
+        bot.infinity_polling()
+    except Exception as e:
+        print(f"❌ Error crítico en infinity_polling: {e}", flush=True)
 
 def inicializar_db():
     conn = sqlite3.connect(DB_NAME)
@@ -76,7 +82,7 @@ def guardar_precio(precio):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"Error DB: {e}")
+        print(f"Error DB: {e}", flush=True)
 
 def cargar_precios():
     try:
@@ -87,7 +93,7 @@ def cargar_precios():
         conn.close()
         return [f[0] for f in filas]
     except Exception as e:
-        print(f"Error DB cargar: {e}")
+        print(f"Error DB cargar: {e}", flush=True)
         return []
 
 def enviar_mensaje(texto):
@@ -95,7 +101,7 @@ def enviar_mensaje(texto):
         try:
             bot.send_message(ID_TELEGRAM, texto, parse_mode="Markdown")
         except Exception as e:
-            print(f"Error enviando Telegram: {e}")
+            print(f"Error enviando Telegram automático: {e}", flush=True)
 
 def obtener_precio_jupiter():
     url = f"https://api.jup.ag/price/v2?ids={ETH_MINT}"
@@ -103,7 +109,7 @@ def obtener_precio_jupiter():
         respuesta = requests.get(url, timeout=10).json()
         return float(respuesta["data"][ETH_MINT]["price"])
     except Exception as e:
-        print(f"Error precio Jupiter: {e}")
+        print(f"Error precio Jupiter: {e}", flush=True)
         return None
 
 # --- INDICADORES ULTRA-RÁPIDOS PARA ALTA FRECUENCIA ---
@@ -139,15 +145,14 @@ def ejecutar_orden_jupiter(tipo_orden, cantidad_usd):
         enviar_mensaje(f"⚡ *[Scalper 24/7]* `{tipo_orden}` por ${cantidad_usd} USDC ejecutada con éxito.")
         return True
     except Exception as e:
-        print(f"Error firma Web3: {e}")
+        print(f"Error firma Web3: {e}", flush=True)
         return False
 
 # --- MOTOR SCALPER DE ALTA ACTIVIDAD ---
 def algoritmo_maestro():
     inicializar_db()
     
-    # Pequeño delay para dejar que Telegram conecte primero
-    time.sleep(2) 
+    print("🚀 Ejecutando algoritmo_maestro... Enviando señal de inicio.", flush=True)
     enviar_mensaje("🚀 *Bot Scalper de Alta Actividad Listo.* Analizando micro-oscilaciones del mercado...")
     
     posicion_abierta = False
@@ -165,7 +170,7 @@ def algoritmo_maestro():
                 guardar_precio(precio_actual)
                 precios_historicos = cargar_precios()
                 
-                print(f"⚡ Monitoreando Scalper: ${precio_actual:.2f} | Muestras: {len(precios_historicos)}/150")
+                print(f"⚡ Monitoreando Scalper: ${precio_actual:.2f} | Muestras: {len(precios_historicos)}/150", flush=True)
                 
                 # GESTIÓN DE CIERRES RÁPIDOS
                 if posicion_abierta:
@@ -189,7 +194,7 @@ def algoritmo_maestro():
                     rsi = calcular_rsi_rapido(precios_historicos)
                     stoch = calcular_estocastico_rapido(precios_historicos)
                     
-                    # Condiciones rápidas para detectar infravaloración o sobrevaloración
+                    # Condiciones rápidas para detectar si está undervalued u overvalued
                     esta_undervalued = precio_actual < b_inferior and rsi < 35 and stoch < 20
                     esta_overvalued = precio_actual > b_superior and rsi > 65 and stoch > 80
 
@@ -208,13 +213,19 @@ def algoritmo_maestro():
                             precio_entrada = precio_actual
                             
         except Exception as e:
-            print(f"Error en bucle principal: {e}")
+            print(f"Error en bucle principal: {e}", flush=True)
             
         time.sleep(30) # Escaneo constante cada 30 segundos
 
 if __name__ == "__main__":
-    # Lanzamos la escucha de comandos de Telegram en un hilo paralelo para que no bloquee el trading
-    threading.Thread(target=iniciar_escucha_telegram, daemon=True).start()
+    print("🏁 Iniciando hilos del sistema...", flush=True)
     
-    # Arrancamos el algoritmo principal
+    # 1. Arrancamos la escucha de Telegram INMEDIATAMENTE
+    t = threading.Thread(target=iniciar_escucha_telegram, daemon=True)
+    t.start()
+    
+    # 2. Dejamos un segundo de margen de carga
+    time.sleep(1)
+    
+    # 3. Arrancamos el algoritmo de trading
     algoritmo_maestro()

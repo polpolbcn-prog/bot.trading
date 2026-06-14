@@ -7,7 +7,6 @@ from flask import Flask
 import telebot
 
 # --- 1. CONFIGURACIÓN DE VARIABLES DE ENTORNO ---
-# Esto conecta directamente con las claves que guardamos en Render
 TOKEN_TELEGRAM = os.environ.get("TELEGRAM_TOKEN")
 ID_TELEGRAM = os.environ.get("TELEGRAM_CHAT_ID")
 PORT = int(os.environ.get("PORT", 10000))
@@ -49,19 +48,35 @@ def calcular_bollinger(precios_list, periodo=20, multiplicador=2):
         return np.mean(precios_list), np.mean(precios_list)
     media = np.mean(precios_list[-periodo:])
     desviacion = np.std(precios_list[-periodo:])
-    sup = media + (multiplicador * desviacion)
-    inf = media - (multiplicador * desviacion)
+    sup = media + (multiplicador * desviación)
+    inf = media - (multiplicador * desviación)
     return sup, inf
 
 def obtener_precio():
-    # Usamos la API pública de Dexscreener para evitar caídas de DNS en Render
-    url = "https://api.dexscreener.com/latest/dex/pairs/solana/7vfCg797rqwKCmwQNpepX8zmYbhG3wD6f1cMZaAht9wj"
+    # Intento 1: API Oficial de Precios de Jupiter (Directa para Solana)
+    url_jup = "https://api.jup.ag/price/v2?ids=7vfCg797rqwKCmwQNpepX8zmYbhG3wD6f1cMZaAht9wj"
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url_jup, timeout=10)
         if r.status_code == 200:
-            return float(r.json()['pair']['priceUsd'])
+            datos = r.json()
+            precio = datos.get('data', {}).get('7vfCg797rqwKCmwQNpepX8zmYbhG3wD6f1cMZaAht9wj', {}).get('price')
+            if precio:
+                return float(precio)
+    except Exception:
+        pass  # Si falla Jupiter, salta automáticamente al respaldo
+
+    # Intento 2: Respaldo con API de Dexscreener corregida y segura
+    url_dex = "https://api.dexscreener.com/latest/dex/pairs/solana/7vfCg797rqwKCmwQNpepX8zmYbhG3wD6f1cMZaAht9wj"
+    try:
+        r = requests.get(url_dex, timeout=10)
+        if r.status_code == 200:
+            res_json = r.json()
+            pair = res_json.get('pair')
+            if pair and 'priceUsd' in pair:
+                return float(pair['priceUsd'])
     except Exception as e:
-        print(f"Error de conexión al proveedor de precios: {e}")
+        print(f"Error crítico en ambos proveedores de precios: {e}")
+        
     return None
 
 # --- 3. BUCLE PRINCIPAL DEL ALGORITMO ---
@@ -75,13 +90,15 @@ def algoritmo_scalping():
             continue
             
         precios.append(p)
+        print(f"📊 Precio obtenido con éxito: ${p:.4f} | Historial: {len(precios)} datos.")
+        
         if len(precios) > 50:
             precios.pop(0)
             
         rsi = calcular_rsi(precios)
         sup, inf = calcular_bollinger(precios)
         
-        # CORREGIDO: Usamos 'ID_TELEGRAM' de forma unificada para evitar el crash del bot
+        # Validación de alertas en Telegram usando variables unificadas
         if p < inf and rsi < 30:
             bot.send_message(ID_TELEGRAM, f"🟢 *UNDERVALUED*\nPrecio: ${p:.4f}\nRSI: {rsi:.1f}\nEstatus: *Compra*", parse_mode="Markdown")
         elif p > sup and rsi > 70:
@@ -94,13 +111,13 @@ if __name__ == "__main__":
     print("🌍 Puerto falso activo en el puerto 10000 para Render Free.")
     print("🏁 Iniciando hilos del sistema...")
 
-    # Limpiamos webhooks conflictivos en los servidores de Telegram antes de empezar
+    # Limpiamos webhooks viejos para evitar conflictos en Telegram
     try:
         bot.remove_webhook()
     except Exception as e:
         print(f"Aviso de Webhook: {e}")
 
-    # Hilo 1: Servidor Web Flask
+    # Hilo 1: Servidor Web Flask (Evita que Render tire el servicio)
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
